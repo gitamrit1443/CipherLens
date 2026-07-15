@@ -1,0 +1,8 @@
+node_modules/
+dist/
+build/
+.angular/
+src/environments/environment.prod.ts
+.vscode
+*.log
+npm-debug.log*

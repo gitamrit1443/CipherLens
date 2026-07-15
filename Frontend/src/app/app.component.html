@@ -1,0 +1,231 @@
+<main class="min-h-screen text-slate-950">
+  <header class="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur">
+    <div class="mx-auto flex max-w-7xl flex-col gap-3 px-3 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+      <div class="min-w-0">
+        <h1 class="truncate text-xl font-semibold tracking-normal sm:text-2xl">CipherLens</h1>
+        <p class="text-sm text-slate-600">Image cryptography workspace</p>
+      </div>
+      <div class="flex flex-wrap items-center justify-end gap-2">
+        <button class="btn btn-sm btn-ghost min-w-0" type="button" (click)="checkHealth()">Refresh</button>
+        <button class="btn btn-sm btn-neutral min-w-0" type="button" *ngIf="signedIn()" (click)="logout()">Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <section class="mx-auto grid max-w-7xl gap-4 px-3 py-4 sm:px-6 lg:grid-cols-[minmax(300px,360px)_minmax(0,1fr)] lg:gap-5">
+    <aside class="space-y-4 lg:sticky lg:top-24 lg:self-start">
+      <section class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <div class="tabs tabs-boxed mb-4 grid grid-cols-3" *ngIf="!signedIn()">
+          <button class="tab" [class.tab-active]="authMode() === 'login'" type="button" (click)="authMode.set('login')">Login</button>
+          <button class="tab" [class.tab-active]="authMode() === 'register'" type="button" (click)="authMode.set('register')">Register</button>
+          <button class="tab" [class.tab-active]="authMode() === 'verify'" type="button" (click)="authMode.set('verify')">2FA</button>
+        </div>
+
+        <div *ngIf="signedIn(); else authPanel">
+          <p class="text-sm text-slate-500">Signed in as</p>
+          <p class="truncate font-semibold">{{ activeUser()?.email }}</p>
+          <p class="mt-1 text-sm text-slate-600">{{ activeUser()?.full_name || "No display name" }}</p>
+        </div>
+
+        <ng-template #authPanel>
+          <form class="space-y-3" *ngIf="authMode() === 'login'" (ngSubmit)="login()">
+            <label class="form-control">
+              <span class="label-text">Email</span>
+              <input class="input input-bordered" type="email" name="loginEmail" [(ngModel)]="loginForm.email" required>
+            </label>
+            <label class="form-control">
+              <span class="label-text">Password</span>
+              <input class="input input-bordered" type="password" name="loginPassword" [(ngModel)]="loginForm.password" required>
+            </label>
+            <button class="btn btn-primary w-full" type="submit" [disabled]="loading()">Continue</button>
+          </form>
+
+          <form class="space-y-3" *ngIf="authMode() === 'register'" (ngSubmit)="register()">
+            <label class="form-control">
+              <span class="label-text">Name</span>
+              <input class="input input-bordered" type="text" name="fullName" [(ngModel)]="registerForm.full_name">
+            </label>
+            <label class="form-control">
+              <span class="label-text">Email</span>
+              <input class="input input-bordered" type="email" name="registerEmail" [(ngModel)]="registerForm.email" required>
+            </label>
+            <label class="form-control">
+              <span class="label-text">Password</span>
+              <input class="input input-bordered" type="password" name="registerPassword" [(ngModel)]="registerForm.password" required>
+              <span class="label-text-alt mt-1 text-slate-500">Use 8+ characters with uppercase, lowercase, and a number.</span>
+            </label>
+            <button class="btn btn-secondary w-full" type="submit" [disabled]="loading()">Create account</button>
+          </form>
+
+          <form class="space-y-3" *ngIf="authMode() === 'verify'" (ngSubmit)="verify()">
+            <label class="form-control">
+              <span class="label-text">Authenticator code</span>
+              <input class="input input-bordered text-center text-xl tracking-[0.25em]" type="text" inputmode="numeric" maxlength="6" name="code" [(ngModel)]="verifyForm.code" required>
+            </label>
+            <button class="btn btn-primary w-full" type="submit" [disabled]="loading() || !preAuthToken">Verify</button>
+          </form>
+
+          <div class="mt-4 rounded-lg border border-slate-200 p-3" *ngIf="registerQr()">
+            <img class="mx-auto h-44 w-44" [src]="registerQr()?.qr_code" alt="2FA QR code">
+          </div>
+        </ng-template>
+      </section>
+
+      <section class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm" *ngIf="signedIn()">
+        <h2 class="mb-3 text-base font-semibold">Upload</h2>
+        <input class="file-input file-input-bordered w-full" type="file" accept="image/png,image/jpeg,image/webp,image/bmp" (change)="onFileChange($event)">
+        <button class="btn btn-primary mt-3 w-full" type="button" (click)="upload()" [disabled]="loading()">Upload image</button>
+      </section>
+
+      <section class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm" *ngIf="signedIn()">
+        <h2 class="mb-3 text-base font-semibold">Encrypt</h2>
+        <label class="form-control">
+          <span class="label-text">Image</span>
+          <select class="select select-bordered" [ngModel]="selectedImageId()" (ngModelChange)="selectedImageId.set($event === null ? null : +$event)" name="imageSelect">
+            <option [ngValue]="null">Select image</option>
+            <option *ngFor="let image of images()" [value]="image.id">{{ image.original_name || image.filename }}</option>
+          </select>
+        </label>
+        <label class="form-control mt-3">
+          <span class="label-text">Algorithm</span>
+          <select class="select select-bordered" [ngModel]="selectedAlgorithm()" (ngModelChange)="selectedAlgorithm.set($event)" name="algorithm">
+            <option *ngFor="let algo of algorithms" [ngValue]="algo">{{ algo.toUpperCase() }}</option>
+          </select>
+        </label>
+        <label class="form-control mt-3">
+          <span class="label-text">Key</span>
+          <input class="input input-bordered" type="password" name="processKey" [(ngModel)]="processKey">
+        </label>
+        <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <button class="btn btn-primary" type="button" (click)="process()" [disabled]="loading()">Run</button>
+          <button class="btn btn-outline" type="button" (click)="benchmark()" [disabled]="loading()">Benchmark</button>
+        </div>
+        <div class="mt-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-3 lg:grid-cols-2">
+          <label class="label cursor-pointer justify-start gap-2" *ngFor="let algo of algorithms">
+            <input class="checkbox checkbox-sm" type="checkbox" [checked]="selectedBenchmark()[algo]" (change)="setBenchmark(algo, $any($event.target).checked)">
+            <span>{{ algo.toUpperCase() }}</span>
+          </label>
+        </div>
+      </section>
+    </aside>
+
+    <section class="min-w-0 space-y-4 lg:space-y-5">
+      <div class="alert alert-success" *ngIf="notice()">{{ notice() }}</div>
+      <div class="alert alert-error" *ngIf="error()">{{ error() }}</div>
+
+      <section class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px] xl:gap-5">
+        <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-base font-semibold">Images</h2>
+            <span class="badge badge-outline">{{ images().length }} files</span>
+          </div>
+          <div class="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3" *ngIf="images().length; else emptyImages">
+            <article class="rounded-lg border p-2 transition hover:border-primary" *ngFor="let image of images()" [class.border-primary]="selectedImageId() === image.id">
+              <button class="block w-full text-left" type="button" (click)="selectImage(image)">
+                <img class="aspect-video w-full rounded-md bg-slate-100 object-cover" [src]="image.url" [alt]="image.original_name || image.filename">
+                <p class="mt-2 truncate text-sm font-medium">{{ image.original_name || image.filename }}</p>
+                <p class="text-xs text-slate-500">{{ formatBytes(image.file_size) }} - {{ image.result_count }} results</p>
+              </button>
+              <button class="btn btn-xs btn-ghost mt-2 min-h-8 w-full text-error" type="button" (click)="deleteImage(image)">Delete</button>
+            </article>
+          </div>
+          <ng-template #emptyImages>
+            <div class="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">
+              Sign in and upload an image to begin.
+            </div>
+          </ng-template>
+        </div>
+
+        <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm xl:sticky xl:top-24 xl:self-start">
+          <h2 class="mb-4 text-base font-semibold">Preview</h2>
+          <ng-container *ngIf="selectedImage(); else noPreview">
+            <p class="mb-2 text-sm font-medium">Original</p>
+            <img class="aspect-video w-full rounded-md bg-slate-100 object-contain" [src]="selectedImage()?.url" alt="Selected original image">
+          </ng-container>
+          <div class="mt-4" *ngIf="latestResult()?.encrypted_image_url">
+            <p class="mb-2 text-sm font-medium">Encrypted</p>
+            <img class="aspect-video w-full rounded-md bg-slate-100 object-contain" [src]="latestResult()?.encrypted_image_url || ''" alt="Encrypted image">
+          </div>
+          <ng-template #noPreview>
+            <div class="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">
+              No image selected.
+            </div>
+          </ng-template>
+        </div>
+      </section>
+
+      <section class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-base font-semibold">Results</h2>
+          <span class="badge badge-outline">{{ results().length }} runs</span>
+        </div>
+        <div class="grid gap-3 md:hidden" *ngIf="results().length; else emptyResults">
+          <article class="rounded-lg border border-slate-200 p-3" *ngFor="let result of results()">
+            <div class="flex items-start justify-between gap-3">
+              <span class="badge badge-primary badge-outline">{{ result.algorithm.toUpperCase() }}</span>
+              <span class="text-sm font-medium">{{ result.processing_time_ms || 0 }} ms</span>
+            </div>
+            <div class="mt-3 grid grid-cols-2 gap-2 text-sm">
+              <div class="rounded-md bg-slate-50 p-2">
+                <p class="text-xs text-slate-500">MSE</p>
+                <p class="font-medium">{{ metricValue(result, "mse") }}</p>
+              </div>
+              <div class="rounded-md bg-slate-50 p-2">
+                <p class="text-xs text-slate-500">PSNR</p>
+                <p class="font-medium">{{ metricValue(result, "psnr") }}</p>
+              </div>
+              <div class="rounded-md bg-slate-50 p-2">
+                <p class="text-xs text-slate-500">NPCR</p>
+                <p class="font-medium">{{ metricValue(result, "npcr") }}</p>
+              </div>
+              <div class="rounded-md bg-slate-50 p-2">
+                <p class="text-xs text-slate-500">UACI</p>
+                <p class="font-medium">{{ metricValue(result, "uaci") }}</p>
+              </div>
+            </div>
+            <div class="mt-3 grid grid-cols-2 gap-2">
+              <button class="btn btn-sm btn-outline" type="button" (click)="latestResult.set(result)">View</button>
+              <button class="btn btn-sm btn-ghost text-error" type="button" (click)="deleteResult(result)">Delete</button>
+            </div>
+          </article>
+        </div>
+        <div class="hidden overflow-x-auto md:block" *ngIf="results().length">
+          <table class="table table-sm">
+            <thead>
+              <tr>
+                <th>Algorithm</th>
+                <th>Time</th>
+                <th>MSE</th>
+                <th>PSNR</th>
+                <th>NPCR</th>
+                <th>UACI</th>
+                <th>Entropy</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let result of results()">
+                <td><span class="badge badge-primary badge-outline">{{ result.algorithm.toUpperCase() }}</span></td>
+                <td>{{ result.processing_time_ms || 0 }} ms</td>
+                <td>{{ metricValue(result, "mse") }}</td>
+                <td>{{ metricValue(result, "psnr") }}</td>
+                <td>{{ metricValue(result, "npcr") }}</td>
+                <td>{{ metricValue(result, "uaci") }}</td>
+                <td>{{ metricValue(result, "entropy") }}</td>
+                <td class="text-right">
+                  <button class="btn btn-xs btn-ghost" type="button" (click)="latestResult.set(result)">View</button>
+                  <button class="btn btn-xs btn-ghost text-error" type="button" (click)="deleteResult(result)">Delete</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <ng-template #emptyResults>
+          <div class="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">
+            Run an algorithm to create benchmark results.
+          </div>
+        </ng-template>
+      </section>
+    </section>
+  </section>
+</main>
